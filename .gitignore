@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Ideation, Tasks & Local Notes (Ignored from Git)
+ideas/
+tasks/
+spec.md
+docs/
+
+
