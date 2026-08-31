@@ -22,9 +22,11 @@ export const DailyDuelView: React.FC = () => {
 
   // Background AI & Optimal calculations
   const [optimalDist, setOptimalDist] = useState<number>(0);
+  const [optimalRoute, setOptimalRoute] = useState<number[]>([]);
   const [aiDist, setAiDist] = useState<number>(0);
   const [aiRoute, setAiRoute] = useState<number[]>([]);
   const [showAiPath, setShowAiPath] = useState<boolean>(false);
+  const [neuralHintNodeId, setNeuralHintNodeId] = useState<number | null>(null);
 
   // Timer interval
   useEffect(() => {
@@ -44,6 +46,7 @@ export const DailyDuelView: React.FC = () => {
       // Held-Karp exact for <= 15 nodes
       const optimal = solveHeldKarp(matrix, 0);
       setOptimalDist(optimal.distance);
+      setOptimalRoute(optimal.tour);
 
       // AI Challenger (Genetic Algorithm)
       const aiResult = solveGeneticAlgorithm(matrix, 0, { generations: 120, populationSize: 50 });
@@ -52,10 +55,22 @@ export const DailyDuelView: React.FC = () => {
     } catch {
       // Fallback
       setOptimalDist(1000);
+      setOptimalRoute([]);
       setAiDist(1050);
       setAiRoute([]);
     }
   }, []);
+
+  // Compute Neural Hint (Find next unvisited city on optimal tour)
+  const handleTriggerNeuralHint = () => {
+    if (optimalRoute.length === 0) return;
+    const visitedSet = new Set(userRoute);
+    const nextOptimalCity = optimalRoute.find((id) => !visitedSet.has(id));
+    if (nextOptimalCity !== undefined) {
+      setNeuralHintNodeId(nextOptimalCity);
+      setTimeout(() => setNeuralHintNodeId(null), 4000);
+    }
+  };
 
   // Reset when seed changes
   useEffect(() => {
@@ -184,6 +199,7 @@ export const DailyDuelView: React.FC = () => {
             userRoute={userRoute}
             aiRoute={aiRoute}
             showAiPath={showAiPath}
+            neuralHintNodeId={neuralHintNodeId}
             onAddNodeToRoute={handleAddNode}
             isComplete={isComplete}
           />
@@ -233,18 +249,29 @@ export const DailyDuelView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Reveal AI Ghost Path Button */}
-              <button
-                onClick={() => setShowAiPath((prev) => !prev)}
-                className={`w-full py-1.5 px-2 rounded text-[11px] font-bold border transition-colors flex items-center justify-center gap-1.5 ${
-                  showAiPath
-                    ? 'bg-neon-pink/10 border-neon-pink text-neon-pink'
-                    : 'bg-background border-border text-muted hover:text-slate-200'
-                }`}
-              >
-                <Brain size={12} />
-                <span>{showAiPath ? 'Hide AI Ghost Path' : '👁️ Reveal AI Ghost Path'}</span>
-              </button>
+              {/* Reveal AI Ghost Path Button & Neural Hint */}
+              <div className="grid grid-cols-2 gap-1.5 mt-2">
+                <button
+                  onClick={() => setShowAiPath((prev) => !prev)}
+                  className={`py-1.5 px-2 rounded text-[11px] font-bold border transition-colors flex items-center justify-center gap-1 ${
+                    showAiPath
+                      ? 'bg-neon-pink/10 border-neon-pink text-neon-pink'
+                      : 'bg-background border-border text-muted hover:text-slate-200'
+                  }`}
+                >
+                  <Brain size={11} />
+                  <span>{showAiPath ? 'Hide AI' : '👁️ Reveal AI'}</span>
+                </button>
+
+                <button
+                  onClick={handleTriggerNeuralHint}
+                  disabled={isComplete}
+                  className="py-1.5 px-2 rounded text-[11px] font-bold border border-neon-amber/50 bg-neon-amber/10 text-neon-amber hover:bg-neon-amber/20 transition-colors flex items-center justify-center gap-1 disabled:opacity-40"
+                  title="Highlight next best move according to exact math"
+                >
+                  <span>💡 Hint</span>
+                </button>
+              </div>
             </div>
           </div>
 

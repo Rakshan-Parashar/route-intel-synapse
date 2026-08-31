@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { CityNode } from '../../types/graph.ts';
 import { DroneState, TruckState, ChaosIncident, IsometricBuilding } from '../../types/vrp.ts';
 
@@ -10,6 +10,7 @@ interface IsometricCityCanvasProps {
   incidents: ChaosIncident[];
   buildings: IsometricBuilding[];
   cameraMode: 'isometric' | 'drone-fpv' | 'truck-cam';
+  onAddBuilding?: (worldX: number, worldY: number) => void;
 }
 
 export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
@@ -20,41 +21,51 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
   incidents,
   buildings,
   cameraMode,
+  onAddBuilding,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Isometric 3D Projection Math
+  // 3D Orbit Camera State (Mouse Drag & Zoom)
+  const [yaw, setYaw] = useState<number>(30); // Horizontal angle in degrees
+  const [pitch, setPitch] = useState<number>(30); // Vertical angle in degrees
+  const [zoom, setZoom] = useState<number>(1.0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // 3D Projection with Custom Orbit Yaw, Pitch, and Zoom
   const toIso = useCallback(
     (x: number, y: number, z = 0, centerX: number, centerY: number) => {
-      // 30 degree isometric angle
-      const cos30 = 0.866;
-      const sin30 = 0.5;
+      const radYaw = (yaw * Math.PI) / 180;
+      const radPitch = (pitch * Math.PI) / 180;
 
+      // Rotate around Z axis (Yaw)
+      const rotX = x * Math.cos(radYaw) - y * Math.sin(radYaw);
+      const rotY = x * Math.sin(radYaw) + y * Math.cos(radYaw);
+
+      // Project onto 2D screen with Pitch
       let offsetX = 0;
       let offsetY = 0;
 
-      // Adjust camera focus if in Drone FPV or Truck Cam mode
       if (cameraMode === 'drone-fpv') {
-        offsetX = -(drone.x - 400) * 0.7;
-        offsetY = -(drone.y - 250) * 0.7;
+        offsetX = -(drone.x - 400) * 0.7 * zoom;
+        offsetY = -(drone.y - 250) * 0.7 * zoom;
       } else if (cameraMode === 'truck-cam') {
-        offsetX = -(truck.x - 400) * 0.7;
-        offsetY = -(truck.y - 250) * 0.7;
+        offsetX = -(truck.x - 400) * 0.7 * zoom;
+        offsetY = -(truck.y - 250) * 0.7 * zoom;
       }
 
-      const isoX = (x - y) * cos30 + centerX + offsetX;
-      const isoY = (x + y) * sin30 - z + centerY + offsetY;
+      const isoX = (rotX - rotY) * Math.cos(radPitch) * zoom + centerX + offsetX;
+      const isoY = (rotX + rotY) * Math.sin(radPitch) * zoom - z * zoom + centerY + offsetY;
 
       return { x: isoX, y: isoY };
     },
-    [cameraMode, drone.x, drone.y, truck.x, truck.y]
+    [yaw, pitch, zoom, cameraMode, drone.x, drone.y, truck.x, truck.y]
   );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Auto-sync canvas internal pixel dimensions with its container
     if (canvas.parentElement) {
       const parentW = canvas.parentElement.clientWidth;
       const parentH = canvas.parentElement.clientHeight;
@@ -70,12 +81,12 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const cx = canvas.width / 2;
-    const cy = canvas.height * 0.28;
+    const cy = canvas.height * 0.45;
 
-    // 1. Draw 3D Isometric Ground Grid
-    const gridSize = 8;
-    const cellSize = 70;
-    ctx.strokeStyle = 'rgba(30, 33, 48, 0.7)';
+    // 1. Draw 3D Ground Grid
+    const gridSize = 9;
+    const cellSize = 65;
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.15)';
     ctx.lineWidth = 1;
 
     for (let i = -gridSize; i <= gridSize; i++) {
@@ -94,7 +105,7 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       ctx.stroke();
     }
 
-    // 2. Draw Truck Ground Planned Route (Cyan dashed line on ground)
+    // 2. Draw Truck Ground Planned Route (Cyan dashed line)
     if (truckRoute.length > 1) {
       ctx.beginPath();
       for (let i = 0; i < truckRoute.length - 1; i++) {
@@ -107,14 +118,14 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
           ctx.lineTo(pb.x, pb.y);
         }
       }
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
+      ctx.lineWidth = 2.5 * zoom;
+      ctx.setLineDash([8, 8]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // 3. Draw 3D Isometric Buildings (Depth-sorted)
+    // 3. Draw 3D Buildings (Depth sorted)
     const sortedBuildings = [...buildings].sort((a, b) => a.x + a.y - (b.x + b.y));
 
     sortedBuildings.forEach((b) => {
@@ -124,7 +135,6 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       const bx = b.x - 400;
       const by = b.y - 250;
 
-      // Building corners in isometric space
       const p1 = toIso(bx + w, by, 0, cx, cy);
       const p2 = toIso(bx + w, by + d, 0, cx, cy);
       const p3 = toIso(bx, by + d, 0, cx, cy);
@@ -135,7 +145,7 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       const t3 = toIso(bx, by + d, h, cx, cy);
 
       // Left Face
-      ctx.fillStyle = '#0e111a';
+      ctx.fillStyle = '#0b0f19';
       ctx.beginPath();
       ctx.moveTo(p3.x, p3.y);
       ctx.lineTo(p2.x, p2.y);
@@ -143,11 +153,11 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       ctx.lineTo(t3.x, t3.y);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.12)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
       ctx.stroke();
 
       // Right Face
-      ctx.fillStyle = '#141824';
+      ctx.fillStyle = '#131929';
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
@@ -155,11 +165,11 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       ctx.lineTo(t1.x, t1.y);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';
       ctx.stroke();
 
       // Top Roof Face
-      ctx.fillStyle = b.hasHelipad ? '#1b2234' : '#181e2e';
+      ctx.fillStyle = b.hasHelipad ? '#1e293b' : '#151d2f';
       ctx.beginPath();
       ctx.moveTo(t0.x, t0.y);
       ctx.lineTo(t1.x, t1.y);
@@ -167,129 +177,173 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
       ctx.lineTo(t3.x, t3.y);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = b.hasHelipad ? '#00e5ff' : 'rgba(0, 229, 255, 0.3)';
-      ctx.lineWidth = b.hasHelipad ? 1.5 : 1;
+      ctx.strokeStyle = b.hasHelipad ? '#00e5ff' : 'rgba(0, 229, 255, 0.4)';
+      ctx.lineWidth = b.hasHelipad ? 2 : 1;
       ctx.stroke();
 
-      // Draw Helipad 'H' on delivery rooftop
+      // Draw Helipad 'H'
       if (b.hasHelipad) {
         const roofCenter = toIso(bx + w / 2, by + d / 2, h, cx, cy);
         ctx.fillStyle = '#00e5ff';
-        ctx.font = 'bold 9px Space Mono';
+        ctx.font = `bold ${Math.round(10 * zoom)}px Space Mono`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('H', roofCenter.x, roofCenter.y);
       }
     });
 
-    // 4. Draw Incidents (Traffic Jams 🚧, Storms ⚡)
+    // 4. Draw Incidents (Traffic Jam / Roadblocks)
     incidents.forEach((inc) => {
       if (!inc.active || !inc.location) return;
       const pos = toIso(inc.location.x - 400, inc.location.y - 250, 0, cx, cy);
 
-      // Pulsing Incident Ring
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 16 * zoom, 0, Math.PI * 2);
       ctx.strokeStyle = inc.type === 'traffic-jam' ? '#ffaa00' : '#ff3d71';
       ctx.lineWidth = 2;
       ctx.stroke();
 
       ctx.fillStyle = inc.type === 'traffic-jam' ? '#ffaa00' : '#ff3d71';
-      ctx.font = 'bold 11px sans-serif';
+      ctx.font = `bold ${Math.round(12 * zoom)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(inc.type === 'traffic-jam' ? '🚧' : '🚨', pos.x, pos.y);
     });
 
-    // 5. Draw Ground Delivery Truck
+    // 5. Draw Ground Truck
     const tPos = toIso(truck.x - 400, truck.y - 250, 0, cx, cy);
     ctx.fillStyle = '#00e5ff';
     ctx.beginPath();
-    ctx.arc(tPos.x, tPos.y, 8, 0, Math.PI * 2);
+    ctx.arc(tPos.x, tPos.y, 9 * zoom, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Truck Label
     ctx.fillStyle = '#00e5ff';
-    ctx.font = 'bold 9px Space Mono';
+    ctx.font = `bold ${Math.round(10 * zoom)}px Space Mono`;
     ctx.textAlign = 'center';
-    ctx.fillText('TRUCK (DOCK)', tPos.x, tPos.y + 16);
+    ctx.fillText('TRUCK (MOTHER DOCK)', tPos.x, tPos.y + 18 * zoom);
 
-    // 6. Draw Autonomous Aerial Drone
-    // Drone Shadow on ground
+    // 6. Draw Aerial Quadcopter Drone
     const dShadow = toIso(drone.x - 400, drone.y - 250, 0, cx, cy);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
-    ctx.ellipse(dShadow.x, dShadow.y, 10, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(dShadow.x, dShadow.y, 12 * zoom, 6 * zoom, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Drone Altitude Tether Line
     const dPos = toIso(drone.x - 400, drone.y - 250, drone.altitude, cx, cy);
-    ctx.strokeStyle = 'rgba(255, 61, 113, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 2]);
+
+    // Altitude laser line
+    ctx.strokeStyle = 'rgba(255, 61, 113, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
     ctx.beginPath();
     ctx.moveTo(dShadow.x, dShadow.y);
     ctx.lineTo(dPos.x, dPos.y);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Drone Body (Quadcopter 4 Rotors)
+    // Drone Body
     ctx.fillStyle = '#ff3d71';
     ctx.beginPath();
-    ctx.arc(dPos.x, dPos.y, 6, 0, Math.PI * 2);
+    ctx.arc(dPos.x, dPos.y, 7 * zoom, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // 4 Rotors
-    const rOffset = 8;
+    const rOffset = 10 * zoom;
     [
       { x: -rOffset, y: -rOffset },
       { x: rOffset, y: -rOffset },
       { x: -rOffset, y: rOffset },
       { x: rOffset, y: rOffset },
     ].forEach((r) => {
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.8)';
+      ctx.strokeStyle = '#00e5ff';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(dPos.x + r.x, dPos.y + r.y, 3, 0, Math.PI * 2);
+      ctx.arc(dPos.x + r.x, dPos.y + r.y, 3.5 * zoom, 0, Math.PI * 2);
       ctx.stroke();
     });
 
-    // Drone Status HUD
+    // Drone HUD
     ctx.fillStyle = '#ff3d71';
-    ctx.font = 'bold 9px Space Mono';
+    ctx.font = `bold ${Math.round(9 * zoom)}px Space Mono`;
     ctx.textAlign = 'center';
-    ctx.fillText(`DRONE (${Math.round(drone.battery)}% 🔋)`, dPos.x, dPos.y - 12);
-  }, [nodes, truckRoute, truck, drone, incidents, buildings, toIso]);
+    ctx.fillText(`DRONE (${Math.round(drone.battery)}% 🔋)`, dPos.x, dPos.y - 14 * zoom);
+  }, [nodes, truckRoute, truck, drone, incidents, buildings, zoom, toIso]);
 
-  // Canvas Resize Listener
-  useEffect(() => {
-    const handleResize = () => {
+  // Mouse Drag Orbit Event Listeners
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+
+    setYaw((prev) => (prev + dx * 0.5) % 360);
+    setPitch((prev) => Math.max(15, Math.min(75, prev + dy * 0.3)));
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Mouse Wheel Zoom
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setZoom((prev) => Math.max(0.6, Math.min(2.2, prev - e.deltaY * 0.001)));
+  };
+
+  // Click on Ground to Build Skyscraper
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.shiftKey && onAddBuilding) {
       const canvas = canvasRef.current;
-      if (!canvas || !canvas.parentElement) return;
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
-      draw();
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [draw]);
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      onAddBuilding(clickX, clickY);
+    }
+  };
 
   useEffect(() => {
     draw();
   }, [draw]);
 
   return (
-    <div className="relative w-full h-full bg-background overflow-hidden select-none">
-      <canvas ref={canvasRef} className="w-full h-full block" />
-      <div className="absolute top-4 left-4 pointer-events-none text-[11px] text-muted tracking-wider uppercase bg-surface/80 border border-border px-3 py-1.5 rounded backdrop-blur">
-        3D Isometric View · Truck + Drone Autonomous Tandem (FSTSP)
+    <div className="relative w-full h-full bg-background overflow-hidden select-none cursor-grab active:cursor-grabbing">
+      <canvas
+        ref={canvasRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        onClick={handleClick}
+        className="w-full h-full block"
+      />
+      <div className="absolute top-4 left-4 pointer-events-none text-[11px] text-muted tracking-wider uppercase bg-surface/80 border border-border px-3 py-1.5 rounded backdrop-blur flex items-center gap-2">
+        <span>🖱️ Drag Mouse to 360° Orbit · Scroll Wheel to Zoom · Shift+Click to Build</span>
+      </div>
+
+      {/* Orbit Reset Button */}
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <button
+          onClick={() => {
+            setYaw(30);
+            setPitch(30);
+            setZoom(1.0);
+          }}
+          className="px-2.5 py-1 bg-surface border border-border text-xs text-muted hover:text-slate-200 rounded font-bold"
+        >
+          Reset Camera
+        </button>
       </div>
     </div>
   );

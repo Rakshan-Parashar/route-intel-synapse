@@ -6,6 +6,7 @@ interface DailyDuelCanvasProps {
   userRoute: number[];
   aiRoute?: number[];
   showAiPath?: boolean;
+  neuralHintNodeId?: number | null;
   onAddNodeToRoute: (nodeId: number) => void;
   isComplete: boolean;
 }
@@ -15,6 +16,7 @@ export const DailyDuelCanvas: React.FC<DailyDuelCanvasProps> = ({
   userRoute,
   aiRoute = [],
   showAiPath = false,
+  neuralHintNodeId = null,
   onAddNodeToRoute,
   isComplete,
 }) => {
@@ -39,6 +41,21 @@ export const DailyDuelCanvas: React.FC<DailyDuelCanvasProps> = ({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Neural Hint Pulsing Ring
+    if (neuralHintNodeId !== null && nodes[neuralHintNodeId]) {
+      const hint = nodes[neuralHintNodeId];
+      ctx.beginPath();
+      ctx.arc(hint.x, hint.y, 26, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffaa00';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffaa00';
+      ctx.font = 'bold 9px Space Mono';
+      ctx.textAlign = 'center';
+      ctx.fillText('💡 NEXT BEST', hint.x, hint.y + 24);
+    }
 
     // 1. Draw AI Opponent's Route (if revealed or active)
     if (showAiPath && aiRoute && aiRoute.length > 1) {

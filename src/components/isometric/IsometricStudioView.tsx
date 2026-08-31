@@ -3,13 +3,13 @@ import { IsometricCityCanvas } from './IsometricCityCanvas.tsx';
 import { ChaosEngineControls } from './ChaosEngineControls.tsx';
 import { CityNode } from '../../types/graph.ts';
 import { TruckState, DroneState, ChaosIncident, IsometricBuilding } from '../../types/vrp.ts';
-import { generateRandomPoints } from '../../core/matrix.ts';
+import { generateRandomPoints, generateClusteredPoints, generateCirclePoints } from '../../core/matrix.ts';
 import { solveNearestNeighbor } from '../../algorithms/heuristics/nearestNeighbor.ts';
 import { buildDistanceMatrix } from '../../core/matrix.ts';
-import { Boxes, Play, Pause, RotateCcw } from 'lucide-react';
+import { Boxes, Play, Pause, RotateCcw, Shuffle, Circle } from 'lucide-react';
 
 export const IsometricStudioView: React.FC = () => {
-  const [nodes] = useState<CityNode[]>(() => generateRandomPoints(10, 800, 500));
+  const [nodes, setNodes] = useState<CityNode[]>(() => generateRandomPoints(10, 800, 500));
   const [truckRoute, setTruckRoute] = useState<number[]>([]);
   const [isSimulating, setIsSimulating] = useState<boolean>(true);
   const [cameraMode, setCameraMode] = useState<'isometric' | 'drone-fpv' | 'truck-cam'>('isometric');
@@ -46,9 +46,9 @@ export const IsometricStudioView: React.FC = () => {
         id: idx,
         x: n.x - 20,
         y: n.y - 20,
-        width: 40,
-        depth: 40,
-        height: idx === 0 ? 25 : 35 + (idx * 14) % 90,
+        width: 44,
+        depth: 44,
+        height: idx === 0 ? 25 : 35 + (idx * 16) % 110,
         color: idx === 0 ? '#39ff14' : '#00e5ff',
         hasHelipad: idx % 2 === 1,
         cityNode: n,
@@ -73,6 +73,20 @@ export const IsometricStudioView: React.FC = () => {
       setDrone((prev) => ({ ...prev, x: nodes[0].x, y: nodes[0].y, altitude: 0, status: 'docked' }));
     }
   }, [nodes, generateCityBuildings, recomputeRoute]);
+
+  // Click on Ground to add new 3D skyscraper
+  const handleAddBuilding = (worldX: number, worldY: number) => {
+    if (nodes.length >= 18) return;
+    const newId = nodes.length;
+    const newNode: CityNode = {
+      id: newId,
+      name: `Tower #${newId}`,
+      x: worldX,
+      y: worldY,
+      demand: (newId % 6) + 2,
+    };
+    setNodes((prev) => [...prev, newNode]);
+  };
 
   // Main 3D Simulation Loop
   const animRef = useRef<number | null>(null);
@@ -114,31 +128,27 @@ export const IsometricStudioView: React.FC = () => {
       setDrone((prev) => {
         let next = { ...prev };
 
-        // If docked, decide if it should launch to deliver to next helipad
         if (next.status === 'docked') {
           next.x = truck.x;
           next.y = truck.y;
           next.altitude = 0;
-          // Slowly recharge battery when docked on truck roof
           next.battery = Math.min(100, next.battery + 0.1);
 
-          // Launch if drone has > 40% battery and target is available
           if (next.battery > 40 && truck.currentRouteIndex < truckRoute.length - 2) {
             const nextStop = nodes[truckRoute[truck.currentRouteIndex + 2]];
             if (nextStop) {
               next.status = 'flying';
-              next.targetPos = { x: nextStop.x, y: nextStop.y, altitude: 65 };
+              next.targetPos = { x: nextStop.x, y: nextStop.y, altitude: 70 };
             }
           }
         } else if (next.status === 'flying' && next.targetPos) {
-          // Fly towards rooftop helipad
           const dx = next.targetPos.x - next.x;
           const dy = next.targetPos.y - next.y;
           const dist = Math.hypot(dx, dy);
-          const speed = 3.2; // Drone flies faster than ground truck
+          const speed = 3.2;
 
           next.altitude = Math.min(next.targetPos.altitude, next.altitude + 1.5);
-          next.battery = Math.max(0, next.battery - 0.08); // battery drain
+          next.battery = Math.max(0, next.battery - 0.08);
 
           if (dist <= speed) {
             next.status = 'returning';
@@ -148,7 +158,6 @@ export const IsometricStudioView: React.FC = () => {
             next.y += (speed * dy) / dist;
           }
         } else if (next.status === 'returning') {
-          // Rendezvous back with moving truck
           const dx = truck.x - next.x;
           const dy = truck.y - next.y;
           const dist = Math.hypot(dx, dy);
@@ -201,9 +210,7 @@ export const IsometricStudioView: React.FC = () => {
 
     setIncidents((prev) => [...prev, newInc]);
 
-    // Handle instant re-routing on incident
     if (type === 'rush-order') {
-      // Dispatches drone immediately
       const randomStop = nodes[Math.floor(Math.random() * nodes.length)];
       setDrone((prev) => ({
         ...prev,
@@ -211,7 +218,6 @@ export const IsometricStudioView: React.FC = () => {
         targetPos: { x: randomStop.x, y: randomStop.y, altitude: 75 },
       }));
     } else if (type === 'traffic-jam') {
-      // Reroute truck around roadblock
       setTruck((prev) => ({ ...prev, isBlocked: true }));
       setTimeout(() => setTruck((prev) => ({ ...prev, isBlocked: false })), 4000);
     }
@@ -255,12 +261,37 @@ export const IsometricStudioView: React.FC = () => {
             <div className="font-display font-extrabold text-sm text-slate-100 flex items-center gap-2">
               3D CYBERPUNK METAVERSE <span className="text-neon-cyan font-bold">FSTSP STUDIO</span>
             </div>
-            <div className="text-[10px] text-muted">Truck + Aerial Quadcopter Autonomous Flying Sidekick Simulation</div>
+            <div className="text-[10px] text-muted">360° Mouse Orbit · Quadcopter Drone Tandem · Click to Build</div>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {/* Preset Layouts */}
+          <div className="flex bg-surface border border-border rounded p-0.5">
+            <button
+              onClick={() => setNodes(generateRandomPoints(10, 800, 500))}
+              className="px-2 py-1 text-xs text-muted hover:text-slate-200 font-bold rounded flex items-center gap-1"
+            >
+              <Shuffle size={12} />
+              <span>Megacity</span>
+            </button>
+            <button
+              onClick={() => setNodes(generateClusteredPoints(12, 3, 800, 500))}
+              className="px-2 py-1 text-xs text-muted hover:text-slate-200 font-bold rounded flex items-center gap-1"
+            >
+              <Circle size={12} />
+              <span>Clusters</span>
+            </button>
+            <button
+              onClick={() => setNodes(generateCirclePoints(10, 400, 250, 160))}
+              className="px-2 py-1 text-xs text-muted hover:text-slate-200 font-bold rounded flex items-center gap-1"
+            >
+              <Circle size={12} />
+              <span>Ring Grid</span>
+            </button>
+          </div>
+
           <button
             onClick={() => setIsSimulating((prev) => !prev)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold uppercase transition-all ${
@@ -291,6 +322,7 @@ export const IsometricStudioView: React.FC = () => {
           incidents={incidents}
           buildings={buildings}
           cameraMode={cameraMode}
+          onAddBuilding={handleAddBuilding}
         />
       </div>
 
