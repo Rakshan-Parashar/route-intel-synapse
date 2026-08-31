@@ -4,6 +4,8 @@ import { CityNode } from '../../types/graph.ts';
 interface DailyDuelCanvasProps {
   nodes: CityNode[];
   userRoute: number[];
+  aiRoute?: number[];
+  showAiPath?: boolean;
   onAddNodeToRoute: (nodeId: number) => void;
   isComplete: boolean;
 }
@@ -11,6 +13,8 @@ interface DailyDuelCanvasProps {
 export const DailyDuelCanvas: React.FC<DailyDuelCanvasProps> = ({
   nodes,
   userRoute,
+  aiRoute = [],
+  showAiPath = false,
   onAddNodeToRoute,
   isComplete,
 }) => {
@@ -21,12 +25,40 @@ export const DailyDuelCanvas: React.FC<DailyDuelCanvasProps> = ({
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    if (canvas.parentElement) {
+      const parentW = canvas.parentElement.clientWidth;
+      const parentH = canvas.parentElement.clientHeight;
+      if (parentW > 0 && parentH > 0 && (canvas.width !== parentW || canvas.height !== parentH)) {
+        canvas.width = parentW;
+        canvas.height = parentH;
+      }
+    }
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Draw User's Active Route Segments
+    // 1. Draw AI Opponent's Route (if revealed or active)
+    if (showAiPath && aiRoute && aiRoute.length > 1) {
+      ctx.beginPath();
+      for (let i = 0; i < aiRoute.length - 1; i++) {
+        const a = nodes[aiRoute[i]];
+        const b = nodes[aiRoute[i + 1]];
+        if (a && b) {
+          if (i === 0) ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+        }
+      }
+      ctx.strokeStyle = 'rgba(255, 61, 113, 0.65)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 2. Draw User's Active Route Segments
     if (userRoute.length > 1) {
       for (let i = 0; i < userRoute.length - 1; i++) {
         const a = nodes[userRoute[i]];

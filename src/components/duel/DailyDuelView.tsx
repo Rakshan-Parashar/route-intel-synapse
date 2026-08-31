@@ -23,6 +23,8 @@ export const DailyDuelView: React.FC = () => {
   // Background AI & Optimal calculations
   const [optimalDist, setOptimalDist] = useState<number>(0);
   const [aiDist, setAiDist] = useState<number>(0);
+  const [aiRoute, setAiRoute] = useState<number[]>([]);
+  const [showAiPath, setShowAiPath] = useState<boolean>(false);
 
   // Timer interval
   useEffect(() => {
@@ -44,12 +46,14 @@ export const DailyDuelView: React.FC = () => {
       setOptimalDist(optimal.distance);
 
       // AI Challenger (Genetic Algorithm)
-      const aiResult = solveGeneticAlgorithm(matrix, 0, { generations: 100, populationSize: 40 });
+      const aiResult = solveGeneticAlgorithm(matrix, 0, { generations: 120, populationSize: 50 });
       setAiDist(aiResult.distance);
+      setAiRoute(aiResult.tour);
     } catch {
       // Fallback
       setOptimalDist(1000);
       setAiDist(1050);
+      setAiRoute([]);
     }
   }, []);
 
@@ -178,6 +182,8 @@ export const DailyDuelView: React.FC = () => {
           <DailyDuelCanvas
             nodes={nodes}
             userRoute={userRoute}
+            aiRoute={aiRoute}
+            showAiPath={showAiPath}
             onAddNodeToRoute={handleAddNode}
             isComplete={isComplete}
           />
@@ -208,22 +214,37 @@ export const DailyDuelView: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-surface p-3 rounded-lg border border-border flex items-center justify-between">
-              <div>
-                <div className="text-[10px] text-muted uppercase font-bold flex items-center gap-1">
-                  <Brain size={12} className="text-neon-pink" />
-                  <span>Genetic AI Target</span>
+            <div className="bg-surface p-3 rounded-lg border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-[10px] text-muted uppercase font-bold flex items-center gap-1">
+                    <Brain size={12} className="text-neon-pink" />
+                    <span>Genetic AI Opponent</span>
+                  </div>
+                  <div className="text-base font-bold font-mono text-neon-pink">
+                    {Math.round(aiDist)} px
+                  </div>
                 </div>
-                <div className="text-base font-bold font-mono text-neon-pink">
-                  {Math.round(aiDist)} px
+                <div className="text-right">
+                  <div className="text-[9px] text-muted uppercase font-bold">Optimal (Held-Karp)</div>
+                  <div className="text-sm font-bold font-mono text-neon-green">
+                    {Math.round(optimalDist)} px
+                  </div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-[9px] text-muted uppercase font-bold">Optimal (Held-Karp)</div>
-                <div className="text-sm font-bold font-mono text-neon-green">
-                  {Math.round(optimalDist)} px
-                </div>
-              </div>
+
+              {/* Reveal AI Ghost Path Button */}
+              <button
+                onClick={() => setShowAiPath((prev) => !prev)}
+                className={`w-full py-1.5 px-2 rounded text-[11px] font-bold border transition-colors flex items-center justify-center gap-1.5 ${
+                  showAiPath
+                    ? 'bg-neon-pink/10 border-neon-pink text-neon-pink'
+                    : 'bg-background border-border text-muted hover:text-slate-200'
+                }`}
+              >
+                <Brain size={12} />
+                <span>{showAiPath ? 'Hide AI Ghost Path' : '👁️ Reveal AI Ghost Path'}</span>
+              </button>
             </div>
           </div>
 

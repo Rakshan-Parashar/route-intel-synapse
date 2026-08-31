@@ -87,12 +87,20 @@ export const BattleArena: React.FC = () => {
   const startBattle = useCallback(() => {
     setIsBattling(true);
 
-    // Reset states
-    const initialStates = { ...solverStates };
-    ARENA_SOLVERS.forEach((s) => {
-      initialStates[s.id] = { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] };
-    });
-    setSolverStates(initialStates);
+    // Reset all solver states
+    const resetStates: Record<AlgorithmType, SolverState> = {
+      'held-karp': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'christofides': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'genetic-algorithm': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'ant-colony': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'nearest-neighbor': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'two-opt': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'three-opt': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'simulated-annealing': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'branch-and-bound': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+      'slime-mold': { route: [], distance: 0, timeMs: 0, iteration: 0, done: false, history: [] },
+    };
+    setSolverStates(resetStates);
 
     ARENA_SOLVERS.forEach((solver, index) => {
       const dispatcher = dispatchersRef.current[index];
@@ -105,24 +113,24 @@ export const BattleArena: React.FC = () => {
         },
         (event: SolverYieldEvent) => {
           setSolverStates((prev) => {
-            const current = prev[solver.id];
+            const current = prev[solver.id] || { history: [] };
             const newHistory = [...current.history, { iteration: event.iteration, distance: event.bestDistance }];
             return {
               ...prev,
               [solver.id]: {
                 route: event.bestTour,
                 distance: event.bestDistance,
-                timeMs: event.executionTimeMs,
+                timeMs: Math.round(event.executionTimeMs),
                 iteration: event.iteration,
-                done: event.done,
-                history: newHistory.length > 50 ? newHistory.slice(-50) : newHistory,
+                done: Boolean(event.done),
+                history: newHistory.length > 40 ? newHistory.slice(-40) : newHistory,
               },
             };
           });
         }
       );
     });
-  }, [nodes, solverStates]);
+  }, [nodes]);
 
   const handleRegenerate = (type: 'random' | 'clustered') => {
     dispatchersRef.current.forEach((d) => d.terminate());

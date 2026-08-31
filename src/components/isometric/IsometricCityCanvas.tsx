@@ -53,13 +53,24 @@ export const IsometricCityCanvas: React.FC<IsometricCityCanvasProps> = ({
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Auto-sync canvas internal pixel dimensions with its container
+    if (canvas.parentElement) {
+      const parentW = canvas.parentElement.clientWidth;
+      const parentH = canvas.parentElement.clientHeight;
+      if (parentW > 0 && parentH > 0 && (canvas.width !== parentW || canvas.height !== parentH)) {
+        canvas.width = parentW;
+        canvas.height = parentH;
+      }
+    }
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const cx = canvas.width / 2;
-    const cy = canvas.height * 0.25;
+    const cy = canvas.height * 0.28;
 
     // 1. Draw 3D Isometric Ground Grid
     const gridSize = 8;
